@@ -1,0 +1,17 @@
+# Time : Sun Sep 13 12:53:19 2015#
+# scanner : True 
+# color_dur : 0.333333333333 
+# screen_number : 1 
+# sf : 10 
+# block_duration : 60 
+# subject : EG009 
+# radial_cyc : 10 
+# fixation_size : 0.4 
+# temporal_freq : 2 
+# angular_cyc : 15 
+# monitor : testMonitor 
+# angular_width : 30 
+# n_blocks : 20 
+# full_screen : True 
+# size : 60 
+time,event 
