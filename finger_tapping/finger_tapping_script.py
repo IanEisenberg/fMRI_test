@@ -1,84 +1,81 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Sep 11 18:05:46 2015
+from psychopy import visual, event, core, gui
+from psychopy.hardware.emulator import launchScan
+from psychopy.sound import Sound
 
-@author: Ian
-"""
+#task settings
+alternate_time = 8 #number of TRs for each block
+n_blocks = 24  #12 on, 12 off
+task_duration = n_blocks * alternate_time #in TRs, 6 minute scan sessions with 2 second TR
+window_dims = [800,600]                              
 
-import numpy as np
-from psychopy import visual,core,event
-import psychopy.monitors.calibTools as calib
+# settings for launchScan:
+MR_settings = { 
+    'TR': 2.000, # duration (sec) per volume
+    'volumes': task_duration, # number of whole-brain 3D volumes / frames
+    'sync': '5', # character to use as the sync timing event; assumed to come at start of a volume
+    'skip': 0, # number of volumes lacking a sync pulse at start of scan (for T1 stabilization)
+    'sound': True, # in test mode only, play a tone as a reminder of scanner noise
+    }
+mode = 'Test' #'Test' or 'Scan' or 'None' to choose at startup
+globalClock = core.Clock()
 
-from tools import *
+infoDlg = gui.DlgFromDict(MR_settings, title='fMRI parameters', order=['TR','volumes'])
+if not infoDlg.OK: core.quit()
 
-rgb = np.array([1.,1.,1.])
-
-#Read a params object from the params file:
-p = Params()
-f = start_data_file(p.subject)
-p.save(f)
-
-f = save_data(f, 'time', 'event') # Events are either color-switches or button presses
-                  
-window_dims = [800,600]
+#Setup task elements
 win = visual.Window(window_dims, allowGUI=False, fullscr= False, 
-                                 monitor='testMonitor', units='deg')  
+                                 monitor='testMonitor', units='deg')    
+fixation_cross=visual.TextStim(win, text='+',font='BiauKai',
+                                height=2,color=[1,1,1], colorSpace=u'rgb',
+                                opacity=1,depth=0.0,
+                                alignHoriz='center',wrapWidth=50)
+counter = visual.TextStim(win, height=.5, pos=(0,-4), color=win.rgb+0.5)
 
-fixation = visual.PatchStim(win, tex=None, mask = 'circle',color=[0, 1, 1],
-                                size=p.fixation_size)
-                                         
-central_grey = visual.PatchStim(win, tex=None, mask='circle', 
-                                                    color=0*rgb, 
-                                                    size=p.fixation_size*3)
+# summary of run timing, for each key press:
+output = u'vol    onset key\n'
+for i in range(-1 * MR_settings['skip'], 0):
+    output += u'%d prescan skip (no sync)\n' % i
 
-message = """ PRESS THE KEY \n WHEN YOU SEE THE RED DOT! """
-#Initialize and call in one:
-Text(win, text=message, height=1.5)() 
-#Wait 1 sec, to avoid running off:
-core.wait(1)
-ttl = 0
-#After that, wait for the ttl pulse:
-while ttl<1:
-    for key in event.getKeys():
-        if key in ['t', '5']:
-            ttl = 1
+key_code = MR_settings['sync']
+output += u"  0    0.000 %s  [Start of scanning run, vol 0]\n" % key_code
+sync_now = False
 
-fix_counter = 0
-key_press = []
+# launch: operator selects Scan or Test (emulate); see API docuwmentation
+vol = launchScan(win, MR_settings, mode = mode, globalClock=globalClock)
 
-for block in xrange(p.n_blocks):
-    block_clock = core.Clock()
-    t=0
-    t_previous = 0
-    
-    while t<p.block_duration:
-        t = block_clock.getTime()
-        t_diff = t-t_previous 
-        if t%10<1:
-            fixation.draw()
-            win.flip()
-        elif t%5<1:
-            win.flip()
-            
+max_slippage = 0.02 # how long to allow before treating a "slow" sync as missed
+    # any slippage is almost certainly due to timing issues with your script or PC, and not MR scanner
 
-        #Keep checking for time:
-        if block_clock.getTime()>=p.block_duration:
-            break
+duration = MR_settings['volumes'] * MR_settings['TR']
+# note: globalClock has been reset to 0.0 by launchScan()
+while globalClock.getTime() < duration:
+    allKeys = event.getKeys()
+    for key in allKeys:
+        if key != MR_settings['sync']:
+            output += u"%3d  %7.3f %s\n" % (vol-1, globalClock.getTime(), unicode(key))
+    if 'escape' in allKeys:
+        output += u'user cancel, '
+        win.close()
+        core.quit()
+        break
+    # detect sync or infer it should have happened:
+    if MR_settings['sync'] in allKeys:
+        sync_now = key_code # flag
+        onset = globalClock.getTime()
+    if sync_now:
+        # do your experiment code at this point; for demo, just shows a counter & time
+        counter.setText(u"Elapsed volumes: %d\n%.3f seconds" % (vol, onset))
+        output += u"%3d  %7.3f %s\n" % (vol, onset, sync_now)
+        counter.draw()
+        #alternate fixation
+        on = vol%(alternate_time*2)>alternate_time
+        if on:
+            fixation_cross.draw()
+        win.flip()
+        vol += 1
+        sync_now = False
 
-        #handle key presses each frame
-        for key in event.getKeys():
-            if key in ['escape','q']:
-                win.close()
-                f.close()
-                core.quit()
-            else:
-                    key_press.append(t + (block * p.block_duration))
-                    f = save_data(f, t + (block * p.block_duration), 'key pressed')
-
-
-        t_previous = t
-        t_arr.append(block_clock.getTime())
-
+output += u"End of scan (vol 0..%d = %d of %s). Total duration = %7.3f sec" % (vol - 1, vol, MR_settings['volumes'], globalClock.getTime())
+print output
 win.close()
-f.close()
 core.quit()
