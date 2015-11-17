@@ -93,7 +93,8 @@ def set_timing():
     f_t = 5
     
 #task settings
-alternate_time = 24 #number of TRs for each block
+tr = .770
+alternate_time = 20//tr #number of TRs for each block
 n_blocks = 25  #12 on, 12 off
 task_duration = n_blocks * alternate_time #in TRs, 6 minute scan sessions with 2 second TR
 window_dims = [800,600] 
@@ -102,11 +103,11 @@ subj = raw_input('type subject id: ')
 time = datetime.now().strftime('%Y-%m-%d_%H.%M.%S')
 # settings for launchScan:
 MR_settings = { 
-    'TR': .950, # duration (sec) per volume
+    'TR': tr, # duration (sec) per volume
     'volumes': task_duration, # number of whole-brain 3D volumes / frames
     'sync': 't', # character to use as the sync timing event; assumed to come at start of a volume
-    'skip': 16, # number of volumes lacking a sync pulse at start of scan (for T1 stabilization)
-    'sound': False, # in test mode only, play a tone as a reminder of scanner noise
+    'skip': 16, #, # number of volumes lacking a sync pulse at start of scan (for T1 stabilization)
+    'sound': False # in test mode only, play a tone as a reminder of scanner noise
     }
 mode = 'Scan' #'Test' or 'Scan' or 'None' to choose at startup
 globalClock = core.Clock()
@@ -124,23 +125,23 @@ set_timing()
 flash_init(win, fl_p, square_size=1, columns=10, rows=10)
 
 sync_now = False
-on = False
+on = False # true when stim is on
+stim_switch = False # true when stim switches on or off
 last_change = 0
 
 # summary of run timing, for each key press:
-output = u'vol    onset key\n'
-for i in range(-1 * MR_settings['skip'], 0):
-    print(u'%d prescan skip (no sync)\n' % i )
-data = {'vol':[], 'onset':[],'key':[]}
+data = {'vol':[], 'event':[], 'onset':[], 'duration':[], 'stim_on':[]}
 
 key_code = MR_settings['sync']
+print(u"  Vol onset event  \n")
 print(u"  0    0.000 %s  [Start of scanning run, vol 0]\n" % key_code)
-data['vol'].append(0); data['onset'].append(0); data['key'].append(key_code)
+data['vol'].append(0); data['event'].append(key_code)
+data['onset'].append(0); data['duration'].append(0); data['stim_on'].append(on)
 
 # launch: operator selects Scan or Test (emulate); see API docuwmentation
 vol = launchScan(win, MR_settings, mode = mode, globalClock=globalClock)
 
-duration = MR_settings['volumes'] * MR_settings['TR']
+duration = MR_settings['volumes'] * tr
 # note: globalClock has been reset to 0.0 by launchScan()
 while globalClock.getTime() < duration:
     allKeys = event.getKeys()
@@ -149,9 +150,10 @@ while globalClock.getTime() < duration:
             onset = globalClock.getTime()
             print(u"%3d  %7.3f %s\n" % (vol-1, onset, unicode(key)))
             data['vol'].append(vol-1)
+            data['event'].append(unicode(key))
             data['onset'].append(onset)
-            data['key'].append(unicode(key))
-            data['stim_on'] = on
+            data['duration'].append(.0001)
+            data['stim_on'].append(on)
     if 'escape' in allKeys:
         output += u'user cancel, '
         win.close()
@@ -163,13 +165,30 @@ while globalClock.getTime() < duration:
         onset = globalClock.getTime()
     if sync_now:
         vol += 1
-        print(u"%3d  %7.3f %s\n" % (vol, onset, key_code))
+        print(u"%3d  %7.3f %s\n" % (vol-1, onset, key_code))
         data['vol'].append(vol-1)
+        data['event'].append(key_code)
         data['onset'].append(onset)
-        data['key'].append(key_code)
+        data['duration'].append(.0001)
+        data['stim_on'].append(on)
+        tmp = on
         on = vol%(alternate_time*2)>alternate_time
-        data['stim_on'] = on
+        stim_switch = (tmp != on)
+        if stim_switch and on:
+            print(u"%3d  %7.3f %s\n" % (vol-1, onset, 'stim_on'))
+            data['vol'].append(vol-1)
+            data['event'].append('stim_on')
+            data['onset'].append(onset)
+            data['duration'].append(alternate_time*tr)
+            data['stim_on'].append(on)
         if not on:
+            if stim_switch:
+                print(u"%3d  %7.3f %s\n" % (vol-1, onset, 'stim_off'))
+                data['vol'].append(vol-1)
+                data['event'].append('stim_off')
+                data['onset'].append(onset)
+                data['duration'].append(alternate_time*tr)
+                data['stim_on'].append(on)
             win.flip()
         sync_now = False
     if on:
@@ -178,9 +197,6 @@ while globalClock.getTime() < duration:
             last_change = globalClock.getTime()
         flash.draw()
         win.flip()
-        
-        
-
 print(u"End of scan (vol 0..%d = %d of %s). Total duration = %7.3f sec" % (vol - 1, vol, MR_settings['volumes'], globalClock.getTime()))
 data = pd.DataFrame(data)
 data.to_csv('raw_data/' + subj+'_'+time, sep = '\t')
