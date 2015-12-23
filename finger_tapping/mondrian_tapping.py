@@ -109,14 +109,14 @@ MR_settings = {
     'skip': 16, #, # number of volumes lacking a sync pulse at start of scan (for T1 stabilization)
     'sound': False # in test mode only, play a tone as a reminder of scanner noise
     }
-mode = 'Scan' #'Test' or 'Scan' or 'None' to choose at startup
+mode = 'Test' #'Test' or 'Scan' or 'None' to choose at startup
 globalClock = core.Clock()
 
 infoDlg = gui.DlgFromDict(MR_settings, title='fMRI parameters', order=['TR','volumes'])
 if not infoDlg.OK: core.quit()
 
 #Setup task elements
-win = visual.Window(window_dims, allowGUI=False, fullscr= True, 
+win = visual.Window(window_dims, allowGUI=False, fullscr= False, 
                                  monitor='testMonitor', units='deg')    
 set_colors()
 set_sizes()
@@ -133,14 +133,11 @@ last_change = 0
 data = {'vol':[], 'event':[], 'onset':[], 'duration':[], 'stim_on':[]}
 
 key_code = MR_settings['sync']
-print(u"  Vol onset event  \n")
-print(u"  0    0.000 %s  [Start of scanning run, vol 0]\n" % key_code)
-data['vol'].append(0); data['event'].append(key_code)
-data['onset'].append(0); data['duration'].append(0); data['stim_on'].append(on)
 
 # launch: operator selects Scan or Test (emulate); see API docuwmentation
 vol = launchScan(win, MR_settings, mode = mode, globalClock=globalClock)
-
+print('Scan start')
+print(u"%3d  %7.3f %s\n" % (vol, 0, unicode(key_code)))
 duration = MR_settings['volumes'] * tr
 # note: globalClock has been reset to 0.0 by launchScan()
 while globalClock.getTime() < duration:
@@ -148,14 +145,14 @@ while globalClock.getTime() < duration:
     for key in allKeys:
         if key != MR_settings['sync']:
             onset = globalClock.getTime()
-            print(u"%3d  %7.3f %s\n" % (vol-1, onset, unicode(key)))
-            data['vol'].append(vol-1)
+            print(u"%3d  %7.3f %s\n" % (vol, onset, unicode(key)))
+            data['vol'].append(vol)
             data['event'].append(unicode(key))
             data['onset'].append(onset)
             data['duration'].append(.0001)
             data['stim_on'].append(on)
     if 'escape' in allKeys:
-        output += u'user cancel, '
+        print('user cancel')
         win.close()
         core.quit()
         break
@@ -165,26 +162,26 @@ while globalClock.getTime() < duration:
         onset = globalClock.getTime()
     if sync_now:
         vol += 1
-        print(u"%3d  %7.3f %s\n" % (vol-1, onset, key_code))
-        data['vol'].append(vol-1)
+        tmp = on
+        on = vol%(alternate_time*2)>=alternate_time
+        stim_switch = (tmp != on)
+        print(u"%3d  %7.3f %s\n" % (vol, onset, key_code))
+        data['vol'].append(vol)
         data['event'].append(key_code)
         data['onset'].append(onset)
         data['duration'].append(.0001)
         data['stim_on'].append(on)
-        tmp = on
-        on = vol%(alternate_time*2)>alternate_time
-        stim_switch = (tmp != on)
         if stim_switch and on:
-            print(u"%3d  %7.3f %s\n" % (vol-1, onset, 'stim_on'))
-            data['vol'].append(vol-1)
+            print(u"%3d  %7.3f %s\n" % (vol, onset, 'stim_on'))
+            data['vol'].append(vol)
             data['event'].append('stim_on')
             data['onset'].append(onset)
             data['duration'].append(alternate_time*tr)
             data['stim_on'].append(on)
         if not on:
             if stim_switch:
-                print(u"%3d  %7.3f %s\n" % (vol-1, onset, 'stim_off'))
-                data['vol'].append(vol-1)
+                print(u"%3d  %7.3f %s\n" % (vol, onset, 'stim_off'))
+                data['vol'].append(vol)
                 data['event'].append('stim_off')
                 data['onset'].append(onset)
                 data['duration'].append(alternate_time*tr)
@@ -199,6 +196,6 @@ while globalClock.getTime() < duration:
         win.flip()
 print(u"End of scan (vol 0..%d = %d of %s). Total duration = %7.3f sec" % (vol - 1, vol, MR_settings['volumes'], globalClock.getTime()))
 data = pd.DataFrame(data)
-data.to_csv('raw_data/' + subj+'_'+time, sep = '\t')
+data.to_csv('raw_data/' + subj+'_'+time, sep = '\t', index = False)
 win.close()
 core.quit()
